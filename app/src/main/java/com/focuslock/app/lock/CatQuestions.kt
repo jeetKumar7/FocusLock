@@ -1,0 +1,181 @@
+package com.focuslock.app.lock
+
+/**
+ * Original CAT-style practice questions (Quant, LRDI, VARC). Add your own freely.
+ * [answer] is the index into [options] as written here; options are shuffled when shown.
+ */
+data class CatQuestion(
+    val section: String,
+    val topic: String,
+    /** 1 = easy, 2 = medium, 3 = hard */
+    val level: Int,
+    val text: String,
+    val options: List<String>,
+    val answer: Int,
+    val explain: String,
+    /** Shared passage / data set for LRDI and RC questions. */
+    val passage: String? = null,
+)
+
+object CatQuestions {
+    val all: List<CatQuestion> get() = base + extra
+
+    private val base = listOf(
+        CatQuestion("Quant", "Profit & loss", 1, "An item is marked 40% above cost price and sold at a 25% discount. What is the profit percentage?",
+            listOf("5%", "10%", "15%", "2.5%"), 0, "1.40 × 0.75 = 1.05, so profit = 5%."),
+        CatQuestion("Quant", "TSD", 1, "A 240 m long train passes a pole in 12 seconds. What is its speed in km/h?",
+            listOf("60", "72", "80", "84"), 1, "240/12 = 20 m/s = 20 × 18/5 = 72 km/h."),
+        CatQuestion("Quant", "Time & work", 1, "A can finish a job in 12 days and B in 18 days. Working together, how many days do they take?",
+            listOf("7.2", "7.5", "6", "8"), 0, "1/12 + 1/18 = 5/36, so 36/5 = 7.2 days."),
+        CatQuestion("Quant", "Ratio", 2, "The ratio of the ages of A and B is 3:5. After 6 years it will be 2:3. What is A's present age?",
+            listOf("12", "15", "18", "24"), 2, "(3x+6)/(5x+6) = 2/3 ⇒ x = 6, so A = 18."),
+        CatQuestion("Quant", "Interest", 1, "What is the compound interest on ₹10,000 at 10% per annum for 2 years (compounded annually)?",
+            listOf("₹2,000", "₹2,100", "₹2,200", "₹1,100"), 1, "10000 × 1.21 − 10000 = 2100."),
+        CatQuestion("Quant", "Number system", 2, "How many positive divisors does 360 have?",
+            listOf("18", "20", "24", "30"), 2, "360 = 2³·3²·5 ⇒ (3+1)(2+1)(1+1) = 24."),
+        CatQuestion("Quant", "Algebra", 1, "If x + 1/x = 5, what is x² + 1/x²?",
+            listOf("23", "25", "27", "21"), 0, "(x + 1/x)² − 2 = 25 − 2 = 23."),
+        CatQuestion("Quant", "Progressions", 1, "What is the sum of the first 20 odd natural numbers?",
+            listOf("400", "420", "380", "441"), 0, "Sum of first n odd numbers = n² = 400."),
+        CatQuestion("Quant", "Number system", 2, "What is the remainder when 2²⁰ is divided by 7?",
+            listOf("1", "2", "4", "6"), 2, "2³ ≡ 1 (mod 7); 2²⁰ = (2³)⁶ · 2² ≡ 4."),
+        CatQuestion("Quant", "Averages", 1, "The average of 5 numbers is 20. When one number is removed, the average becomes 18. Which number was removed?",
+            listOf("26", "28", "30", "22"), 1, "100 − 4 × 18 = 28."),
+        CatQuestion("Quant", "Percentages", 1, "The price of sugar rises by 25%. By what percentage must consumption fall to keep spending the same?",
+            listOf("20%", "25%", "15%", "22.5%"), 0, "25/125 = 20%."),
+        CatQuestion("Quant", "TSD", 2, "A boat goes 15 km/h in still water; the stream flows at 3 km/h. How long does a 36 km trip downstream and back take?",
+            listOf("4 h", "4.5 h", "5 h", "6 h"), 2, "36/18 + 36/12 = 2 + 3 = 5 hours."),
+        CatQuestion("Quant", "P&C", 1, "In how many distinct ways can the letters of LEVEL be arranged?",
+            listOf("30", "60", "120", "20"), 0, "5!/(2!·2!) = 30."),
+        CatQuestion("Quant", "Probability", 1, "Two fair dice are rolled. What is the probability that the sum is 8?",
+            listOf("5/36", "1/6", "7/36", "1/9"), 0, "(2,6),(3,5),(4,4),(5,3),(6,2) = 5 outcomes out of 36."),
+        CatQuestion("Quant", "Geometry", 2, "What is the area of a triangle with sides 13, 14 and 15?",
+            listOf("84", "96", "72", "90"), 0, "s = 21; √(21·8·7·6) = √7056 = 84."),
+        CatQuestion("Quant", "Logarithms", 1, "What is log₂8 + log₃81?",
+            listOf("6", "7", "12", "5"), 1, "3 + 4 = 7."),
+        CatQuestion("Quant", "Ratio", 1, "If 30% of A equals 45% of B, what is A : B?",
+            listOf("2:3", "3:2", "9:4", "4:9"), 1, "0.3A = 0.45B ⇒ A/B = 1.5 = 3:2."),
+        CatQuestion("Quant", "Time & work", 2, "Pipes P and Q fill a tank in 20 and 30 minutes; pipe R empties it in 60 minutes. With all three open, how long does filling take?",
+            listOf("12 min", "15 min", "18 min", "20 min"), 1, "1/20 + 1/30 − 1/60 = 4/60 ⇒ 15 minutes."),
+        CatQuestion("Quant", "TSD", 2, "Walking at 5 km/h a man is 10 minutes late; at 6 km/h he is 5 minutes early. What is the distance?",
+            listOf("6 km", "7.5 km", "8 km", "9 km"), 1, "d/5 − d/6 = 15/60 ⇒ d = 7.5 km."),
+        CatQuestion("Quant", "Number system", 1, "What is the LCM of 12, 18 and 30?",
+            listOf("90", "180", "360", "120"), 1, "2²·3²·5 = 180."),
+        CatQuestion("Quant", "Number system", 2, "What is the smallest number greater than 1 that leaves remainder 1 when divided by 2, 3, 4, 5 and 6?",
+            listOf("61", "121", "31", "59"), 0, "LCM(2..6) = 60, so 60 + 1 = 61."),
+        CatQuestion("Quant", "Number system", 1, "What is the units digit of 7⁴⁵?",
+            listOf("1", "3", "7", "9"), 2, "Cycle 7, 9, 3, 1; 45 mod 4 = 1 ⇒ 7."),
+        CatQuestion("Quant", "Interest", 1, "A sum doubles in 8 years at simple interest. What is the annual rate?",
+            listOf("10%", "12.5%", "8%", "15%"), 1, "100% in 8 years ⇒ 12.5% per year."),
+        CatQuestion("Quant", "Mixtures", 2, "40 L of milk and water are in the ratio 3:1. How much water must be added to make it 3:2?",
+            listOf("5 L", "10 L", "15 L", "20 L"), 1, "Milk 30, water 10; for 3:2 water must be 20 ⇒ add 10 L."),
+        CatQuestion("Quant", "Profit & loss", 1, "The selling price of 20 items equals the cost price of 25 items. What is the profit percentage?",
+            listOf("20%", "25%", "30%", "15%"), 1, "Profit = 5 items on 20 ⇒ 25%."),
+        CatQuestion("Quant", "Algebra", 1, "If the roots of x² − 7x + 12 = 0 are a and b, what is a² + b²?",
+            listOf("25", "49", "24", "7"), 0, "(a+b)² − 2ab = 49 − 24 = 25."),
+        CatQuestion("Quant", "Clocks", 2, "What is the angle between the hands of a clock at 3:15?",
+            listOf("0°", "7.5°", "15°", "22.5°"), 1, "Hour hand at 97.5°, minute hand at 90° ⇒ 7.5°."),
+        CatQuestion("LRDI", "Series", 1, "What comes next: 2, 6, 12, 20, 30, ?",
+            listOf("40", "42", "44", "36"), 1, "n(n+1): 6 × 7 = 42."),
+        CatQuestion("LRDI", "Coding", 1, "If CAT is coded as 24 (C=3, A=1, T=20), how is DOG coded?",
+            listOf("24", "26", "27", "25"), 1, "4 + 15 + 7 = 26."),
+        CatQuestion("LRDI", "Syllogism", 1, "All roses are flowers. Some flowers fade quickly. Is \"some roses fade quickly\" true?",
+            listOf("Definitely true", "Definitely false", "Cannot be determined", "True only if all flowers fade"), 2,
+            "The flowers that fade quickly may not include any roses."),
+        CatQuestion("LRDI", "Odd one out", 1, "Which number is the odd one out: 144, 169, 196, 210?",
+            listOf("144", "169", "196", "210"), 3, "The others are perfect squares (12², 13², 14²)."),
+        CatQuestion("VARC", "Vocabulary", 1, "Which word is closest in meaning to EPHEMERAL?",
+            listOf("Short-lived", "Eternal", "Heavenly", "Fragile"), 0, "Ephemeral = lasting a very short time."),
+        CatQuestion("VARC", "Vocabulary", 1, "Which word is closest in meaning to OBFUSCATE?",
+            listOf("Make unclear", "Clarify", "Destroy", "Delay"), 0, "To obfuscate is to make something obscure or unclear."),
+        CatQuestion("VARC", "Vocabulary", 1, "Which word is the opposite of LACONIC?",
+            listOf("Concise", "Verbose", "Brief", "Curt"), 1, "Laconic = using few words; verbose = using too many."),
+        CatQuestion("VARC", "Vocabulary", 1, "Which word is closest in meaning to UBIQUITOUS?",
+            listOf("Rare", "Found everywhere", "Unique", "Ancient"), 1, "Ubiquitous = present everywhere."),
+    )
+
+    private const val SEATING = "Five friends P, Q, R, S and T sit in a row facing north. R sits in the middle. " +
+        "P sits at the left end. Q sits immediately to the right of R. T does not sit next to P."
+    private const val PHONES = "A shop's phone sales: January 120 units, February 150, March 90, April 180. " +
+        "The average price was ₹10,000 per phone in January and February, and ₹12,000 in March and April."
+    private const val RC = "Attention, unlike money, cannot be saved for later; every hour is spent whether or not " +
+        "we choose how. Platforms built on endless feeds profit from this by removing natural stopping points: " +
+        "there is no last page and no end of an episode, only the next item. Some researchers argue that the most " +
+        "effective defence is not willpower but friction: small, deliberate obstacles that restore the pause a " +
+        "feed was designed to remove. A person who must take one extra step before scrolling is more likely to " +
+        "notice the choice they are making."
+
+    private val extra = listOf(
+        CatQuestion("Quant", "Number system", 3, "How many integers from 1 to 1000 are divisible by none of 2, 3 and 5?",
+            listOf("266", "268", "264", "734"), 0, "Divisible by at least one: 500+333+200−166−100−66+33 = 734, so 1000−734 = 266."),
+        CatQuestion("Quant", "Progressions", 3, "An infinite GP has sum 20, and the sum of the squares of its terms is 100. What is its first term?",
+            listOf("8", "10", "5", "12"), 0, "a/(1−r)=20 and a²/(1−r²)=100 ⇒ a/(1+r)=5 ⇒ r=0.6, a=8."),
+        CatQuestion("Quant", "TSD", 2, "A and B start 300 km apart and drive towards each other at 40 and 60 km/h. After they meet, how long does A take to reach B's starting point?",
+            listOf("4.5 h", "3 h", "5 h", "2 h"), 0, "They meet after 3 h; A still has 300−120 = 180 km at 40 km/h = 4.5 h."),
+        CatQuestion("Quant", "Percentages", 1, "Successive discounts of 20% and 10% equal a single discount of:",
+            listOf("28%", "30%", "27%", "25%"), 0, "0.8 × 0.9 = 0.72 ⇒ 28% off."),
+        CatQuestion("Quant", "Logarithms", 2, "Given log₁₀2 = 0.301, how many digits does 2⁵⁰ have?",
+            listOf("15", "16", "17", "14"), 1, "50 × 0.301 = 15.05 ⇒ 15 + 1 = 16 digits."),
+        CatQuestion("Quant", "P&C", 2, "A 3-person committee is chosen from 5 men and 4 women. In how many ways can it include at least one woman?",
+            listOf("74", "80", "64", "84"), 0, "C(9,3) − C(5,3) = 84 − 10 = 74."),
+        CatQuestion("Quant", "Interest", 2, "₹1,000 grows to ₹1,331 in 3 years at compound interest. What is the annual rate?",
+            listOf("10%", "11%", "9%", "12%"), 0, "1.331 = 1.1³ ⇒ 10%."),
+        CatQuestion("Quant", "P&C", 1, "In how many ways can 6 people sit around a round table?",
+            listOf("120", "720", "60", "24"), 0, "(6−1)! = 120."),
+        CatQuestion("Quant", "Number system", 2, "What is the remainder when 7¹⁰⁰ is divided by 8?",
+            listOf("1", "7", "0", "3"), 0, "7 ≡ −1 (mod 8), so 7¹⁰⁰ ≡ (−1)¹⁰⁰ = 1."),
+        CatQuestion("Quant", "Algebra", 2, "The roots of x² − 5x + k = 0 differ by 3. What is k?",
+            listOf("4", "6", "2", "−4"), 0, "(a−b)² = (a+b)² − 4ab ⇒ 9 = 25 − 4k ⇒ k = 4."),
+        CatQuestion("Quant", "Mixtures", 3, "From 60 L of milk, 6 L is removed and replaced with water. This is done 3 times in total. How much milk is left?",
+            listOf("43.74 L", "45 L", "42.5 L", "48.6 L"), 0, "60 × (54/60)³ = 60 × 0.729 = 43.74 L."),
+        CatQuestion("Quant", "TSD", 1, "A car covers two equal distances at 30 km/h and 60 km/h. What is its average speed?",
+            listOf("40 km/h", "45 km/h", "50 km/h", "35 km/h"), 0, "2 × 30 × 60 / (30 + 60) = 40."),
+        CatQuestion("Quant", "Geometry", 1, "What is the area of the circle inscribed in a square of side 14 cm? (π = 22/7)",
+            listOf("154 cm²", "616 cm²", "196 cm²", "144 cm²"), 0, "r = 7 ⇒ 22/7 × 49 = 154."),
+        CatQuestion("Quant", "Mensuration", 2, "A cube's space diagonal is 6√3 cm. What is its volume?",
+            listOf("216 cm³", "108 cm³", "324 cm³", "512 cm³"), 0, "Diagonal = a√3 ⇒ a = 6 ⇒ 216."),
+        CatQuestion("Quant", "Number system", 2, "How many trailing zeros does 100! have?",
+            listOf("24", "20", "25", "22"), 0, "⌊100/5⌋ + ⌊100/25⌋ = 20 + 4 = 24."),
+        CatQuestion("Quant", "Ratio", 1, "If a : b = 2 : 3 and b : c = 4 : 5, what is a : b : c?",
+            listOf("8 : 12 : 15", "2 : 3 : 5", "8 : 12 : 20", "4 : 6 : 5"), 0, "Make b common: 8 : 12 and 12 : 15."),
+        CatQuestion("Quant", "Functions", 1, "If f(x) = 2x + 3 and g(x) = x², what is f(g(2))?",
+            listOf("11", "49", "7", "19"), 0, "g(2) = 4, f(4) = 11."),
+        CatQuestion("Quant", "Progressions", 2, "What is the sum of all two-digit numbers divisible by 7?",
+            listOf("728", "735", "714", "700"), 0, "14, 21, …, 98: 13 terms ⇒ 13 × (14 + 98)/2 = 728."),
+        CatQuestion("Quant", "Time & work", 3, "Alone, A takes 10 days more than A and B together, and B takes 2.5 days more than A and B together. How many days do they take together?",
+            listOf("5", "6", "4", "7.5"), 0, "Together time t = √(10 × 2.5) = 5."),
+        CatQuestion("Quant", "Algebra", 1, "If x + y = 20, what is the largest possible value of xy?",
+            listOf("100", "96", "99", "400"), 0, "Maximum when x = y = 10."),
+
+        CatQuestion("LRDI", "Seating", 2, "Who sits at the right end?", listOf("T", "Q", "S", "P"), 0,
+            "P S R Q T: R in the middle, Q right of R, so S and T take seats 2 and 5; T can't be next to P, so T is at seat 5.", SEATING),
+        CatQuestion("LRDI", "Seating", 2, "Who sits between P and R?", listOf("S", "T", "Q", "Nobody"), 0,
+            "The order is P S R Q T.", SEATING),
+        CatQuestion("LRDI", "Seating", 1, "Who sits immediately to the left of Q?", listOf("R", "S", "T", "P"), 0,
+            "The order is P S R Q T.", SEATING),
+        CatQuestion("LRDI", "Data interpretation", 2, "Which month had the highest revenue?", listOf("April", "February", "January", "March"), 0,
+            "April: 180 × 12,000 = ₹21.6 lakh, the highest.", PHONES),
+        CatQuestion("LRDI", "Data interpretation", 1, "By what percentage did units sold rise from March to April?", listOf("100%", "50%", "90%", "200%"), 0,
+            "90 → 180 is a 100% rise.", PHONES),
+        CatQuestion("LRDI", "Data interpretation", 2, "What was the total revenue from January to April?", listOf("₹59.4 lakh", "₹54 lakh", "₹62.1 lakh", "₹64.8 lakh"), 0,
+            "12 + 15 + 10.8 + 21.6 = ₹59.4 lakh.", PHONES),
+
+        CatQuestion("VARC", "Reading comprehension", 2, "Which best states the main idea of the passage?",
+            listOf(
+                "Small obstacles can restore the moment of choice that endless feeds remove.",
+                "Attention is more valuable than money.",
+                "Willpower is the best defence against distraction.",
+                "Platforms should be banned from using endless feeds.",
+            ), 0, "The passage builds to friction as the defence that restores the pause.", RC),
+        CatQuestion("VARC", "Reading comprehension", 1, "According to the passage, endless feeds hold attention mainly by:",
+            listOf("Removing natural stopping points", "Showing better content", "Rewarding users with money", "Limiting how long people can watch"), 0,
+            "\"…removing natural stopping points: there is no last page…\"", RC),
+        CatQuestion("VARC", "Reading comprehension", 3, "The author would most likely agree that:",
+            listOf(
+                "Relying on willpower alone is a weak strategy against endless feeds.",
+                "Friction makes people use their phones more.",
+                "Attention can be saved and spent later.",
+                "Stopping points make feeds more profitable.",
+            ), 0, "The researchers say the best defence is \"not willpower but friction\".", RC),
+    )
+}

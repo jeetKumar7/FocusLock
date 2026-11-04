@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">FocusLock</string>
+    <string name="service_label">FocusLock section blocker</string>
+    <string name="service_description">Watches Instagram, YouTube, Facebook, Snapchat and X for the sections you chose to block (Reels, Shorts, Stories…) and sends you back out of them. It reads only those apps\' screen layout, on your phone, and never sends anything anywhere.</string>
+    <string name="widget_description">How many times FocusLock stopped you today</string>
+</resources>
