@@ -17,6 +17,7 @@ Built with Kotlin and Jetpack Compose, with an iOS-style interface. Everything r
 - Cooldown before a block actually switches off, which you can cancel
 - "Do you really want this?" countdown before a Reel or Short you're allowed to watch
 - Stricter changes apply instantly; looser ones need the challenge
+- **Uninstall protection** (optional): Device Admin + accessibility blocking so the app cannot be uninstalled and attempts to disable the accessibility service or device admin are blocked. Turning it off requires the challenge.
 
 **Insight**
 - Stats: blocks per day, by hour of day and by section
@@ -50,6 +51,7 @@ Debug builds include a **Testing mode** that skips challenges; release builds do
 
 | Path | What it does |
 |---|---|
+| `admin/` | Device admin receiver and uninstall protection helpers |
 | `rules/ContentRules.kt` | Which screens are blocked and how they're detected |
 | `service/GuardAccessibilityService.kt` | Watches the supported apps and acts on matches |
 | `service/PauseOverlay.kt`, `service/Banner.kt` | Pause screen and block banner |

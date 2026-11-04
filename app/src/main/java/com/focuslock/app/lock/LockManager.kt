@@ -50,6 +50,8 @@ data class LockState(
     val pauseSeconds: Int = 8,
     /** Debug builds only: loosening skips the challenge and cooldown. */
     val testingMode: Boolean = false,
+    /** When true, Device Admin is requested and uninstall/disable attempts are blocked. */
+    val uninstallProtected: Boolean = false,
 ) {
     fun viewerMode(id: String) = viewerModes[id] ?: ViewerMode.ONE_ONLY
 
@@ -82,6 +84,7 @@ class LockManager(private val context: Context) {
         val pause = intPreferencesKey("pause_seconds")
         val testing = androidx.datastore.preferences.core.booleanPreferencesKey("testing_mode")
         val legacyReelsOn = androidx.datastore.preferences.core.booleanPreferencesKey("reels_rule_on")
+        val uninstallProtected = androidx.datastore.preferences.core.booleanPreferencesKey("uninstall_protected")
     }
 
     val state: Flow<LockState> = context.dataStore.data.map { p ->
@@ -108,6 +111,7 @@ class LockManager(private val context: Context) {
                 ?.takeIf { it.isNotEmpty() } ?: LockState.DEFAULT_MESSAGES,
             pauseSeconds = p[Keys.pause] ?: 8,
             testingMode = com.focuslock.app.BuildConfig.DEBUG && (p[Keys.testing] ?: false),
+            uninstallProtected = p[Keys.uninstallProtected] ?: false,
         )
     }
 
@@ -149,6 +153,10 @@ class LockManager(private val context: Context) {
 
     suspend fun setTestingMode(on: Boolean) {
         context.dataStore.edit { it[Keys.testing] = on && com.focuslock.app.BuildConfig.DEBUG }
+    }
+
+    suspend fun setUninstallProtected(on: Boolean) {
+        context.dataStore.edit { it[Keys.uninstallProtected] = on }
     }
 
     suspend fun setCooldown(minutes: Int) {

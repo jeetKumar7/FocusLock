@@ -23,6 +23,7 @@ import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Science
 import androidx.compose.material.icons.rounded.Timer
+import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -47,6 +48,7 @@ import com.focuslock.app.ui.components.NavRow
 import com.focuslock.app.ui.components.RowBase
 import com.focuslock.app.ui.components.Section
 import com.focuslock.app.ui.components.ToggleRow
+import com.focuslock.app.admin.UninstallProtection
 import com.focuslock.app.ui.theme.IosType
 import com.focuslock.app.ui.theme.LocalIos
 
@@ -59,6 +61,7 @@ fun SettingsTab(
     onOpenCooldown: () -> Unit,
     onOpenPause: () -> Unit,
     onTestingMode: (Boolean) -> Unit,
+    onUninstallProtection: (Boolean) -> Unit,
 ) {
     val ios = LocalIos.current
     val context = LocalContext.current
@@ -139,6 +142,19 @@ fun SettingsTab(
                         )
                     }
                 }
+            },
+        )
+
+        Section(
+            header = "Protection",
+            footer = "When on, the app cannot be uninstalled and attempts to disable the accessibility service or device admin are blocked. Turning this off requires your challenge.",
+            rows = listOf {
+                ToggleRow(
+                    "Prevent uninstall",
+                    state.uninstallProtected && UninstallProtection.isActive(context),
+                    onUninstallProtection,
+                    leading = { IconBadge(Icons.Rounded.Security, ios.red) },
+                )
             },
         )
 

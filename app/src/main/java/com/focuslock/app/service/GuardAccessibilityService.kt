@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.os.Handler
 import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
+import com.focuslock.app.admin.UninstallProtection
 import com.focuslock.app.lock.LockManager
 import com.focuslock.app.lock.LockState
 import com.focuslock.app.lock.ViewerMode
@@ -51,6 +52,50 @@ class GuardAccessibilityService : AccessibilityService() {
         lock.state.onEach { state = it }.launchIn(scope)
     }
 
+    private fun isUninstallOrDisableAttempt(event: AccessibilityEvent, pkg: String): Boolean {
+        val ourPkg = packageName
+        val text = event.text.joinToString(" ").lowercase()
+        val className = event.className?.toString()?.lowercase() ?: ""
+
+        // Package installer / uninstall dialogs
+        if (pkg.contains("packageinstaller") || pkg.contains("packageinstaller") ||
+            className.contains("uninstall") || text.contains("uninstall")
+        ) {
+            if (text.contains(ourPkg) || text.contains("focuslock") || event.text.any { it.toString().contains(ourPkg) }) {
+                return true
+            }
+        }
+
+        // Settings app screens related to our app, accessibility, or device admin
+        if (pkg == "com.android.settings" || pkg.startsWith("com.android.settings")) {
+            val root = rootInActiveWindow
+            val screenText = root?.let { collectText(it) }?.lowercase() ?: text
+
+            val isOurAppInfo = screenText.contains("focuslock") || screenText.contains(ourPkg)
+            val isUninstall = screenText.contains("uninstall") || screenText.contains("remove")
+            val isAccessibility = screenText.contains("accessibility") || screenText.contains("focuslock section blocker")
+            val isDeviceAdmin = screenText.contains("device admin") || screenText.contains("device administrators") ||
+                screenText.contains("deactivate") || screenText.contains("de-activate")
+
+            if (isOurAppInfo && (isUninstall || isAccessibility || isDeviceAdmin)) return true
+            if (isAccessibility && (screenText.contains("focuslock") || screenText.contains("section blocker"))) return true
+            if (isDeviceAdmin && screenText.contains("focuslock")) return true
+        }
+
+        return false
+    }
+
+    private fun collectText(node: android.view.accessibility.AccessibilityNodeInfo): String {
+        val sb = StringBuilder()
+        fun walk(n: android.view.accessibility.AccessibilityNodeInfo) {
+            n.text?.let { sb.append(it).append(' ') }
+            n.contentDescription?.let { sb.append(it).append(' ') }
+            for (i in 0 until n.childCount) n.getChild(i)?.let { walk(it) }
+        }
+        walk(node)
+        return sb.toString()
+    }
+
     /** A Reel/Short opened outside its tab that we are letting you watch (ONE_ONLY mode). */
     private data class ViewerSession(
         val ruleId: String,
@@ -62,6 +107,21 @@ class GuardAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         val pkg = event.packageName?.toString() ?: return
         val now = System.currentTimeMillis()
+
+        // Uninstall / disable protection
+        if (state.uninstallProtected && UninstallProtection.isActive(this)) {
+            if (isUninstallOrDisableAttempt(event, pkg)) {
+                lastActionAt = now
+                performGlobalAction(GLOBAL_ACTION_HOME)
+                banner.show(
+                    "Uninstall blocked",
+                    "Turn off uninstall protection in FocusLock first (needs your challenge).",
+                    null,
+                )
+                return
+            }
+        }
+
         // Coming back to an app after a while counts as a new visit.
         if (now - (lastEventAt[pkg] ?: 0L) > NEW_VISIT_MS) redirected.removeAll { ContentRules.byId[it]?.pkg == pkg }
         lastEventAt[pkg] = now

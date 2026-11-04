@@ -39,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.focuslock.app.admin.UninstallProtection
 import com.focuslock.app.lock.ChallengeScreen
 import com.focuslock.app.lock.ChallengeType
 import com.focuslock.app.lock.LockManager
@@ -88,6 +89,7 @@ private sealed interface Pending {
     }
     data class SetPause(val seconds: Int) : Pending { override val title = "Shorter pause" }
     data class SwitchChallenge(val to: ChallengeType) : Pending { override val title = "Change challenge" }
+    data object DisableUninstallProtection : Pending { override val title = "Turn off uninstall protection" }
 }
 
 private val TABS = listOf(
@@ -131,6 +133,10 @@ private fun App(lock: LockManager) {
             is Pending.SetPause -> lock.setPauseSeconds(p.seconds)
             is Pending.SwitchChallenge -> lock.setChallenge(p.to)
             is Pending.SetViewerMode -> lock.setViewerMode(p.ruleId, p.mode)
+            is Pending.DisableUninstallProtection -> {
+                UninstallProtection.deactivate(context)
+                lock.setUninstallProtected(false)
+            }
         }
     }
     fun loosen(p: Pending) { if (state.testingMode) apply(p, 0) else pending = p }
@@ -185,6 +191,14 @@ private fun App(lock: LockManager) {
                                         onOpenCooldown = { stack += Route.Cooldown },
                                         onOpenPause = { stack += Route.Pause },
                                         onTestingMode = { on -> scope.launch { lock.setTestingMode(on) } },
+                                        onUninstallProtection = { on ->
+                                            if (on) {
+                                                scope.launch { lock.setUninstallProtected(true) }
+                                                UninstallProtection.requestActivation(context)
+                                            } else {
+                                                loosen(Pending.DisableUninstallProtection)
+                                            }
+                                        },
                                     )
                                 }
                             }
