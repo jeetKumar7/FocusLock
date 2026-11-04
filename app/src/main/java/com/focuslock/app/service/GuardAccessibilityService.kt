@@ -68,8 +68,15 @@ class GuardAccessibilityService : AccessibilityService() {
 
         // Settings app screens related to our app, accessibility, or device admin
         if (pkg == "com.android.settings" || pkg.startsWith("com.android.settings")) {
+            // The Device Admin *activation* screen (ADD_DEVICE_ADMIN) is opened by us — don't block it.
+            if (className.contains("deviceadminadd")) return false
+
             val root = rootInActiveWindow
             val screenText = root?.let { collectText(it) }?.lowercase() ?: text
+
+            // Activation screen: contains "activate" but not "deactivate"
+            val isActivation = screenText.contains("activate") && !screenText.contains("deactivate") && !screenText.contains("de-activate")
+            if (isActivation && screenText.contains("focuslock")) return false
 
             val isOurAppInfo = screenText.contains("focuslock") || screenText.contains(ourPkg)
             val isUninstall = screenText.contains("uninstall") || screenText.contains("remove")

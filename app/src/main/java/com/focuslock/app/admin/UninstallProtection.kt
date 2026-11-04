@@ -23,7 +23,6 @@ object UninstallProtection {
                 "FocusLock uses device admin so it cannot be uninstalled without deactivating this first. " +
                     "Deactivating it will require your unlock challenge.",
             )
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         context.startActivity(intent)
     }
