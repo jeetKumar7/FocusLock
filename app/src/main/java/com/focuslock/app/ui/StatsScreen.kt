@@ -27,6 +27,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.focuslock.app.rules.ContentRules
+import com.focuslock.app.service.UsageTracker
 import com.focuslock.app.stats.BlockLog
 import com.focuslock.app.ui.components.AppIcon
 import com.focuslock.app.ui.components.IconBadge
@@ -61,6 +62,46 @@ fun StatsTab() {
             Tile("7 days", perDay.sum(), ios.indigo, Modifier.weight(1f))
             Tile("30 days", last30.size, ios.purple, Modifier.weight(1f))
         }
+
+        // --- Screen time today (from UsageTracker) ---
+        val usage = remember { UsageTracker(context) }
+        val screenTime by androidx.compose.runtime.produceState(
+            initialValue = emptyList<AppUsage>() to 0,
+            events.size,
+        ) {
+            value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val pm = context.packageManager
+                val filtered = usage.todayApps()
+                    .filterNot { (pkg, _) -> pkg == "com.android.systemui" || pkg.contains("launcher") || pkg.contains("inputmethod") }
+                val total = filtered.sumOf { it.second }
+                val apps = filtered.take(12).map { (pkg, sec) ->
+                    val label = runCatching { pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString() }.getOrDefault(pkg)
+                    AppUsage(pkg, label, sec, usage.todayOpens(pkg))
+                }
+                apps to total
+            }
+        }
+        val (appTimes, totalSec) = screenTime
+        Section(
+            header = "Screen time today",
+            footer = if (appTimes.isEmpty()) "Open some apps and your time here fills in through the day." else null,
+            rows = buildList<@Composable () -> Unit> {
+                add {
+                    RowBase("Total today") {
+                        Text(fmtDuration(totalSec), style = IosType.body, color = ios.label)
+                    }
+                }
+                appTimes.forEach { u ->
+                    add {
+                        RowBase(
+                            title = u.label,
+                            subtitle = if (u.opens > 0) "${u.opens} ${if (u.opens == 1) "open" else "opens"}" else null,
+                            leading = { AppIcon(u.pkg) { IconBadge(Icons.Rounded.Block, ios.secondaryLabel) } },
+                        ) { Text(fmtDuration(u.sec), style = IosType.body, color = ios.secondaryLabel) }
+                    }
+                }
+            },
+        )
 
         Card("Last 7 days", trend(perDay.sum(), prevWeek)) {
             Bars(perDay, ios.blue, ios.fill, Modifier.fillMaxWidth().height(150.dp), highlightLast = true)
@@ -150,6 +191,18 @@ private fun Bars(values: List<Int>, color: Color, empty: Color, modifier: Modifi
             }
             drawRoundRect(c, Offset(i * slot + (slot - w) / 2, size.height - h), Size(w, h), CornerRadius(w / 3, w / 3))
         }
+    }
+}
+
+private data class AppUsage(val pkg: String, val label: String, val sec: Int, val opens: Int)
+
+private fun fmtDuration(totalSec: Int): String {
+    val h = totalSec / 3600
+    val m = (totalSec % 3600) / 60
+    return when {
+        h > 0 -> "${h}h ${m}m"
+        m > 0 -> "${m}m"
+        else -> "<1m"
     }
 }
 

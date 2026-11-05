@@ -2,6 +2,7 @@ package com.focuslock.app.web
 
 import android.content.Context
 import android.net.ConnectivityManager
+import android.provider.Settings
 
 /**
  * The adult filter uses Android's built-in Private DNS pointed at a filtering DNS service,
@@ -43,6 +44,16 @@ object AdultFilter {
         data class OtherDns(val hostname: String) : Status
         data object Off : Status
     }
+
+    /**
+     * True when the user has strict ("hostname") Private DNS configured. In this mode
+     * Android forces all DNS over TLS to that server and ignores any DNS a VPN provides,
+     * so our VPN DNS filter both duplicates it and blocks the DoT connection (breaking
+     * internet). Read from the global setting, not LinkProperties, because a broken VPN
+     * can make isPrivateDnsActive read false even while the user has it configured.
+     */
+    fun privateDnsStrict(context: Context): Boolean =
+        Settings.Global.getString(context.contentResolver, "private_dns_mode") == "hostname"
 
     fun status(context: Context): Status {
         val cm = context.getSystemService(ConnectivityManager::class.java) ?: return Status.Off

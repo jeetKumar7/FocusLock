@@ -207,6 +207,27 @@ fun StepperRow(
     Stepper(onMinus, onPlus, minusEnabled)
 }
 
+/** Convenience: numeric stepper that calls [onChange] with the new value. */
+@Composable
+fun StepperRow(
+    title: String,
+    value: Int,
+    min: Int,
+    max: Int,
+    step: Int,
+    display: String,
+    leading: (@Composable () -> Unit)? = null,
+    onChange: (Int) -> Unit,
+) = RowBase(title, leading = leading) {
+    val ios = LocalIos.current
+    Text(display, style = IosType.body, color = ios.secondaryLabel, modifier = Modifier.padding(end = 10.dp))
+    Stepper(
+        onMinus = { onChange((value - step).coerceAtLeast(min)) },
+        onPlus = { onChange((value + step).coerceAtMost(max)) },
+        minusEnabled = value > min,
+    )
+}
+
 /** iOS stepper: "− | +" in a grey capsule. */
 @Composable
 fun Stepper(onMinus: () -> Unit, onPlus: () -> Unit, minusEnabled: Boolean = true) {
@@ -332,12 +353,19 @@ fun IconBadge(icon: ImageVector, color: Color, size: Dp = 30.dp) {
 @Composable
 fun AppIcon(pkg: String, size: Dp = 30.dp, fallback: @Composable () -> Unit) {
     val context = LocalContext.current
-    val bmp = remember(pkg) {
-        runCatching { context.packageManager.getApplicationIcon(pkg).toBitmap(128, 128).asImageBitmap() }.getOrNull()
+    // Decode off the main thread; a synchronous getApplicationIcon()/toBitmap() per row
+    // freezes the UI while a whole app list renders.
+    val bmp by androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, pkg) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { context.packageManager.getApplicationIcon(pkg).toBitmap(128, 128).asImageBitmap() }.getOrNull()
+        }
     }
-    if (bmp != null) {
-        Image(bmp, null, Modifier.size(size).clip(RoundedCornerShape(size * 0.24f)))
-    } else fallback()
+    val b = bmp
+    if (b != null) {
+        Image(b, null, Modifier.size(size).clip(RoundedCornerShape(size * 0.24f)))
+    } else {
+        Box(Modifier.size(size).clip(RoundedCornerShape(size * 0.24f))) { fallback() }
+    }
 }
 
 // ---------------------------------------------------------------- tab bar

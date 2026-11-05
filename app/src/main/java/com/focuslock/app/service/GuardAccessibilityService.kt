@@ -20,7 +20,6 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 
-/** Sends you out of the app sections you chose to block (Reels, Shorts, Stories...). */
 class GuardAccessibilityService : AccessibilityService() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -28,108 +27,155 @@ class GuardAccessibilityService : AccessibilityService() {
     private lateinit var lock: LockManager
     private lateinit var log: BlockLog
     private lateinit var pause: PauseOverlay
+    private lateinit var banner: Banner
+    private lateinit var usage: UsageTracker
 
     @Volatile private var state = LockState()
     private var lastActionAt = 0L
-    /** Loop guard: recent action times. If we keep firing, something is misdetected, so back off. */
     private val recentActions = ArrayDeque<Long>()
     private var pausedUntil = 0L
-    /** After pressing Back we wait for the closing animation before ever pressing Back again. */
     private var backSettlingUntil = 0L
-    /** Redirect rules that already redirected in this visit to the app. */
     private val redirected = mutableSetOf<String>()
     private val lastEventAt = mutableMapOf<String, Long>()
     private val lastRedirectAt = mutableMapOf<String, Long>()
-    /** rule id -> time until which a Reel may be opened without the pause ("Watch it"). */
     private val watchPass = mutableMapOf<String, Long>()
-    private lateinit var banner: Banner
+    private var lastForegroundPkg: String? = null
+    private var lastAppBlockAt = 0L
+
+    private data class ViewerSession(val ruleId: String, var startedAt: Long, var index: Int? = null)
+    private var session: ViewerSession? = null
 
     override fun onServiceConnected() {
         lock = LockManager(applicationContext)
         log = BlockLog.get(applicationContext)
         pause = PauseOverlay(this)
         banner = Banner(this)
+        usage = UsageTracker(applicationContext)
         lock.state.onEach { state = it }.launchIn(scope)
     }
-
-    private fun isUninstallOrDisableAttempt(event: AccessibilityEvent, pkg: String): Boolean {
-        val ourPkg = packageName
-        val text = event.text.joinToString(" ").lowercase()
-        val className = event.className?.toString()?.lowercase() ?: ""
-
-        // Package installer / uninstall dialogs
-        if (pkg.contains("packageinstaller") || pkg.contains("packageinstaller") ||
-            className.contains("uninstall") || text.contains("uninstall")
-        ) {
-            if (text.contains(ourPkg) || text.contains("focuslock") || event.text.any { it.toString().contains(ourPkg) }) {
-                return true
-            }
-        }
-
-        // Settings app screens related to our app, accessibility, or device admin
-        if (pkg == "com.android.settings" || pkg.startsWith("com.android.settings")) {
-            // The Device Admin *activation* screen (ADD_DEVICE_ADMIN) is opened by us — don't block it.
-            if (className.contains("deviceadminadd")) return false
-
-            val root = rootInActiveWindow
-            val screenText = root?.let { collectText(it) }?.lowercase() ?: text
-
-            // Activation screen: contains "activate" but not "deactivate"
-            val isActivation = screenText.contains("activate") && !screenText.contains("deactivate") && !screenText.contains("de-activate")
-            if (isActivation && screenText.contains("focuslock")) return false
-
-            val isOurAppInfo = screenText.contains("focuslock") || screenText.contains(ourPkg)
-            val isUninstall = screenText.contains("uninstall") || screenText.contains("remove")
-            val isAccessibility = screenText.contains("accessibility") || screenText.contains("focuslock section blocker")
-            val isDeviceAdmin = screenText.contains("device admin") || screenText.contains("device administrators") ||
-                screenText.contains("deactivate") || screenText.contains("de-activate")
-
-            if (isOurAppInfo && (isUninstall || isAccessibility || isDeviceAdmin)) return true
-            if (isAccessibility && (screenText.contains("focuslock") || screenText.contains("section blocker"))) return true
-            if (isDeviceAdmin && screenText.contains("focuslock")) return true
-        }
-
-        return false
-    }
-
-    private fun collectText(node: android.view.accessibility.AccessibilityNodeInfo): String {
-        val sb = StringBuilder()
-        fun walk(n: android.view.accessibility.AccessibilityNodeInfo) {
-            n.text?.let { sb.append(it).append(' ') }
-            n.contentDescription?.let { sb.append(it).append(' ') }
-            for (i in 0 until n.childCount) n.getChild(i)?.let { walk(it) }
-        }
-        walk(node)
-        return sb.toString()
-    }
-
-    /** A Reel/Short opened outside its tab that we are letting you watch (ONE_ONLY mode). */
-    private data class ViewerSession(
-        val ruleId: String,
-        var startedAt: Long,
-        var index: Int? = null,
-    )
-    private var session: ViewerSession? = null
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         val pkg = event.packageName?.toString() ?: return
         val now = System.currentTimeMillis()
+        val ourPkg = packageName
 
-        // Uninstall / disable protection
+        // Never block ourselves, launchers, or system UI
+        if (pkg == ourPkg || pkg == "com.android.launcher" || pkg.startsWith("com.android.launcher") ||
+            pkg == "com.google.android.apps.nexuslauncher" || pkg == "com.android.systemui" ||
+            pkg == "com.sec.android.app.launcher"
+        ) {
+            if (pkg != lastForegroundPkg && event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+                usage.onAppForeground(pkg)
+                lastForegroundPkg = pkg
+            }
+            return
+        }
+
+        // Track foreground app for usage
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && pkg != lastForegroundPkg) {
+            usage.onAppForeground(pkg)
+            if (lastForegroundPkg != pkg) usage.recordOpen(pkg)
+            lastForegroundPkg = pkg
+        }
+
+        // --- Settings guard: uninstall / disable / settings protection ---
         if (state.uninstallProtected && UninstallProtection.isActive(this)) {
-            if (isUninstallOrDisableAttempt(event, pkg)) {
+            if (isProtectedSettingsScreen(event, pkg)) {
                 lastActionAt = now
                 performGlobalAction(GLOBAL_ACTION_HOME)
-                banner.show(
-                    "Uninstall blocked",
-                    "Turn off uninstall protection in FocusLock first (needs your challenge).",
-                    null,
-                )
+                banner.show("Access blocked", "Turn off protection in FocusLock first (needs your challenge).", null)
                 return
             }
         }
 
-        // Coming back to an app after a while counts as a new visit.
+        // --- Enhanced settings guard (#2, #3) ---
+        if (state.settingsGuarded) {
+            if (isGuardedSettingsScreen(event, pkg)) {
+                if (now - lastAppBlockAt > APP_BLOCK_THROTTLE) {
+                    lastAppBlockAt = now
+                    performGlobalAction(GLOBAL_ACTION_HOME)
+                    banner.show("Settings protected", "This setting is guarded by FocusLock.", null)
+                }
+                return
+            }
+        }
+
+        // --- Whole-app blocking (#5) ---
+        if (pkg != "com.android.settings" && !pkg.startsWith("com.android.settings")) {
+            if (state.isAppBlocked(pkg, now)) {
+                if (now - lastAppBlockAt > APP_BLOCK_THROTTLE) {
+                    lastAppBlockAt = now
+                    performGlobalAction(GLOBAL_ACTION_HOME)
+                    val reason = when {
+                        state.isPanicActive(now) -> "Panic mode: everything is blocked"
+                        state.isQuickBlockActive(now) -> "Quick Block is active"
+                        state.isPomodoroWork(now) -> "Focus time (Pomodoro)"
+                        state.allowListMode -> "This app isn't in your allowed list"
+                        state.activeSchedules().isNotEmpty() -> "Blocked by schedule: ${state.activeSchedules().first().name}"
+                        else -> "This app is blocked"
+                    }
+                    banner.show("App blocked", reason, null)
+                }
+                return
+            }
+
+            // --- Sleep mode: lock everything except chosen essentials + call/clock safelist ---
+            if (state.isSleepActive(now) && pkg !in state.sleepEssentials && !isSleepSafe(pkg)) {
+                if (now - lastAppBlockAt > APP_BLOCK_THROTTLE) {
+                    lastAppBlockAt = now
+                    performGlobalAction(GLOBAL_ACTION_HOME)
+                    banner.show(
+                        "Sleep mode",
+                        "Apps are locked until %02d:%02d. Rest up.".format(state.sleepEndHour, state.sleepEndMin),
+                        null,
+                    )
+                }
+                return
+            }
+        }
+
+        // --- Usage limits (#8) ---
+        if (state.appDailyLimits.isNotEmpty() || state.screenTimeLimit > 0) {
+            val limitMin = state.appDailyLimits[pkg]
+            if (limitMin != null && limitMin > 0) {
+                val usedSec = usage.todaySeconds(pkg)
+                if (usedSec >= limitMin * 60) {
+                    if (now - lastAppBlockAt > APP_BLOCK_THROTTLE) {
+                        lastAppBlockAt = now
+                        performGlobalAction(GLOBAL_ACTION_HOME)
+                        banner.show("Daily limit reached", "$pkg: ${limitMin}min used up for today.", null)
+                    }
+                    return
+                }
+            }
+            if (state.screenTimeLimit > 0) {
+                val totalSec = usage.todayTotalSeconds()
+                if (totalSec >= state.screenTimeLimit * 60) {
+                    if (now - lastAppBlockAt > APP_BLOCK_THROTTLE) {
+                        lastAppBlockAt = now
+                        performGlobalAction(GLOBAL_ACTION_HOME)
+                        banner.show("Screen time limit", "You've used ${state.screenTimeLimit}min of screen time today.", null)
+                    }
+                    return
+                }
+            }
+        }
+
+        // --- Website blocklist ---
+        if (state.blockedSites.isNotEmpty() && pkg in BROWSERS) {
+            val url = rootInActiveWindow?.let { findUrl(it) }
+            val host = url?.let { com.focuslock.app.lock.normalizeDomain(it) }
+            if (host != null && state.blockedSites.any { host == it || host.endsWith(".$it") }) {
+                if (now - lastAppBlockAt > APP_BLOCK_THROTTLE) {
+                    lastAppBlockAt = now
+                    performGlobalAction(GLOBAL_ACTION_HOME)
+                    banner.show("Site blocked", "$host is on your blocklist.", null)
+                }
+                return
+            }
+        }
+
+        // --- Content rules (feed blocking, existing logic) ---
         if (now - (lastEventAt[pkg] ?: 0L) > NEW_VISIT_MS) redirected.removeAll { ContentRules.byId[it]?.pkg == pkg }
         lastEventAt[pkg] = now
         if (now - lastActionAt < THROTTLE_MS) return
@@ -144,14 +190,11 @@ class GuardAccessibilityService : AccessibilityService() {
 
         for (rule in rules) {
             when (rule.match(root, dm.widthPixels, dm.heightPixels)) {
-                // The tab is always blocked, every time. No back-off here: the tab check is reliable.
                 ContentRule.Match.TAB -> {
                     endSession()
                     android.util.Log.w(TAG, "TAB match: ${rule.id}")
                     if (!rule.backIfNoTarget) {
                         android.util.Log.w(TAG, "redirect check ${rule.id}: alreadyRedirected=${rule.id in redirected}")
-                        // Redirect-only: redirect once, then leave you alone until you switch
-                        // tabs or leave the app. Never presses Back (that would close the app).
                         if (rule.id in redirected) {
                             val sinceLast = now - (lastRedirectAt[rule.id] ?: 0L)
                             if (sinceLast > 1_500 && rule.clearlyOnBlockedTab(root)) redirected -= rule.id
@@ -195,31 +238,118 @@ class GuardAccessibilityService : AccessibilityService() {
                 }
                 null -> {
                     if (session?.ruleId == rule.id) endSession()
-                    // You switched to another bottom tab: redirect again next time you come back.
-                    // (Being on the redirect target also gives null; that must NOT reset.)
                     if (rule.otherTabSelected(root)) redirected -= rule.id
-                    // Screen-based rules: not on that screen any more, so redirect again next time
-                    // (but never more often than every few seconds, so it can't loop).
                     if (rule.screenLabels.isNotEmpty() && now - (lastRedirectAt[rule.id] ?: 0L) > 8_000) redirected -= rule.id
                 }
             }
         }
     }
 
-    /**
-     * Lets you watch the Reel/Short you opened, but sends you back as soon as another one fills
-     * the screen. Primary signal: the list position of the visible item (works even when the app
-     * sends no scroll events, like YouTube). Backup: scroll events from the swipe list.
-     * Changes in the first moment are the player settling, not you.
-     */
+    // --- Settings protection ---
+
+    private fun isProtectedSettingsScreen(event: AccessibilityEvent, pkg: String): Boolean {
+        val ourPkg = packageName
+        val text = event.text.joinToString(" ").lowercase()
+        val className = event.className?.toString()?.lowercase() ?: ""
+
+        if (pkg.contains("packageinstaller") || className.contains("uninstall") || text.contains("uninstall")) {
+            if (text.contains(ourPkg) || text.contains("focuslock") || event.text.any { it.toString().contains(ourPkg) }) {
+                return true
+            }
+        }
+
+        if (pkg == "com.android.settings" || pkg.startsWith("com.android.settings")) {
+            if (className.contains("deviceadminadd")) return false
+            val root = rootInActiveWindow
+            val screenText = root?.let { collectText(it) }?.lowercase() ?: text
+            val isActivation = screenText.contains("activate") && !screenText.contains("deactivate") && !screenText.contains("de-activate")
+            if (isActivation && screenText.contains("focuslock")) return false
+
+            val isOurAppInfo = screenText.contains("focuslock") || screenText.contains(ourPkg)
+            val isUninstall = screenText.contains("uninstall") || screenText.contains("remove")
+            val isAccessibility = screenText.contains("accessibility") || screenText.contains("focuslock section blocker")
+            val isDeviceAdmin = screenText.contains("device admin") || screenText.contains("device administrators") ||
+                screenText.contains("deactivate") || screenText.contains("de-activate")
+
+            if (isOurAppInfo && (isUninstall || isAccessibility || isDeviceAdmin)) return true
+            if (isAccessibility && (screenText.contains("focuslock") || screenText.contains("section blocker"))) return true
+            if (isDeviceAdmin && screenText.contains("focuslock")) return true
+        }
+        return false
+    }
+
+    private fun isGuardedSettingsScreen(event: AccessibilityEvent, pkg: String): Boolean {
+        if (pkg != "com.android.settings" && !pkg.startsWith("com.android.settings")) return false
+        val root = rootInActiveWindow ?: return false
+        val screenText = collectText(root).lowercase()
+        val ourPkg = packageName
+
+        // Block FocusLock's App Info page (Force Stop, Clear Data, etc.)
+        val isOurAppInfo = (screenText.contains("focuslock") || screenText.contains(ourPkg)) &&
+            (screenText.contains("force stop") || screenText.contains("app info") ||
+                screenText.contains("storage") || screenText.contains("clear data"))
+        if (isOurAppInfo) return true
+
+        // Block Private DNS settings
+        if (screenText.contains("private dns") && (screenText.contains("dns provider") || screenText.contains("hostname"))) {
+            return true
+        }
+
+        // Block VPN settings page
+        if ((screenText.contains("vpn") && screenText.contains("settings")) ||
+            (screenText.contains("vpn") && (screenText.contains("add") || screenText.contains("delete") || screenText.contains("edit")))
+        ) {
+            return true
+        }
+
+        // Block battery optimization page for FocusLock
+        if (screenText.contains("battery") && screenText.contains("optimization") &&
+            (screenText.contains("focuslock") || screenText.contains(ourPkg))
+        ) {
+            return true
+        }
+
+        return false
+    }
+
+    /** Reads the address-bar URL from a browser window, or null. */
+    private fun findUrl(node: android.view.accessibility.AccessibilityNodeInfo): String? {
+        val vid = node.viewIdResourceName?.lowercase()
+        if (vid != null && (vid.endsWith("url_bar") || vid.contains("url") || vid.contains("location_bar") || vid.contains("address"))) {
+            val t = node.text?.toString()?.trim()
+            if (!t.isNullOrEmpty() && t.contains('.') && !t.contains(' ')) return t
+        }
+        for (i in 0 until node.childCount) {
+            node.getChild(i)?.let { child -> findUrl(child)?.let { return it } }
+        }
+        return null
+    }
+
+    /** Apps that must stay reachable overnight so the user isn't locked out of calls/alarm. */
+    private fun isSleepSafe(pkg: String): Boolean {
+        val p = pkg.lowercase()
+        return listOf("dialer", "phone", "incall", "contacts", "clock", "deskclock", "alarm", "mms", "messaging", "messages")
+            .any { p.contains(it) }
+    }
+
+    private fun collectText(node: android.view.accessibility.AccessibilityNodeInfo): String {
+        val sb = StringBuilder()
+        fun walk(n: android.view.accessibility.AccessibilityNodeInfo) {
+            n.text?.let { sb.append(it).append(' ') }
+            n.contentDescription?.let { sb.append(it).append(' ') }
+            for (i in 0 until n.childCount) n.getChild(i)?.let { walk(it) }
+        }
+        walk(node)
+        return sb.toString()
+    }
+
+    // --- Feed blocking (existing logic) ---
+
     private fun onePerOpen(rule: ContentRule, event: AccessibilityEvent, root: android.view.accessibility.AccessibilityNodeInfo, now: Long) {
         if (session?.ruleId != rule.id) {
-            // Still closing from our own Back (or the pause screen is up): don't act again.
             if (now < backSettlingUntil || pause.isShowing) return
             val hasPass = now < (watchPass[rule.id] ?: 0L)
             if (state.pauseSeconds > 0 && !hasPass) {
-                // Close the Reel first so it doesn't keep playing behind the pause screen.
-                // "Watch it" gives a short pass: open it again and it plays from the start.
                 lastActionAt = now
                 pressBackOnce(rule)
                 if (!pause.isShowing) {
@@ -238,7 +368,7 @@ class GuardAccessibilityService : AccessibilityService() {
                 }
                 return
             }
-            watchPass.remove(rule.id) // one use per pass
+            watchPass.remove(rule.id)
         }
         val s = session?.takeIf { it.ruleId == rule.id } ?: ViewerSession(rule.id, now).also { session = it }
         val dm = resources.displayMetrics
@@ -251,17 +381,13 @@ class GuardAccessibilityService : AccessibilityService() {
                     "from=${event.fromIndex} to=${event.toIndex} pos=$pos base=${s.index}",
             )
         }
-
         if (now - s.startedAt < SETTLE_MS) {
             if (pos != null) s.index = pos
             else if (isScroll && rule.isPager(event.source) && event.fromIndex >= 0) s.index = event.fromIndex
             return
         }
-
         val moved = when {
-            pos != null -> {
-                if (s.index == null) { s.index = pos; false } else pos != s.index
-            }
+            pos != null -> { if (s.index == null) { s.index = pos; false } else pos != s.index }
             isScroll && rule.isPager(event.source) ->
                 s.index == null || event.fromIndex < 0 || event.fromIndex != s.index
             else -> false
@@ -272,19 +398,12 @@ class GuardAccessibilityService : AccessibilityService() {
         act(now, rule, "Only the one you opened: no scrolling") { pressBackOnce(rule) }
     }
 
-    /**
-     * The target lives in a bar that hides itself: nudge the list (back first, then forward)
-     * until the bar shows, then tap the target. Gives up quietly if it never appears.
-     */
     private fun revealThenRedirect(rule: ContentRule, now: Long) {
         lastActionAt = now
         fun attempt(step: Int) {
             val root = rootInActiveWindow ?: return
             if (root.packageName?.toString() != rule.pkg) return
-            if (rule.goHome(root)) {
-                act(System.currentTimeMillis(), rule, rule.tabMessage) {}
-                return
-            }
+            if (rule.goHome(root)) { act(System.currentTimeMillis(), rule, rule.tabMessage) {}; return }
             when (step) {
                 0 -> rule.reveal(root, forward = false)
                 1 -> rule.reveal(root, forward = true)
@@ -295,16 +414,13 @@ class GuardAccessibilityService : AccessibilityService() {
         attempt(0)
     }
 
-    /** Taps each step of [ContentRule.redirectTaps] in turn, waiting for menus to open in between. */
     private fun tapSequence(rule: ContentRule, step: Int) {
-        // Menus open as separate pop-up windows, so look in every window of that app.
         val roots = (windows.mapNotNull { it.root } + listOfNotNull(rootInActiveWindow))
             .filter { it.packageName?.toString() == rule.pkg }
         if (roots.isEmpty()) return
         android.util.Log.w(TAG, "tap step $step for ${rule.id}: ${roots.size} window(s)")
         if (roots.none { rule.tapStep(it, rule.redirectTaps[step]) }) {
-            android.util.Log.w(TAG, "tap step $step not found: ${rule.id}")
-            return
+            android.util.Log.w(TAG, "tap step $step not found: ${rule.id}"); return
         }
         if (step == rule.redirectTaps.lastIndex) {
             act(System.currentTimeMillis(), rule, rule.tabMessage) {}
@@ -313,25 +429,15 @@ class GuardAccessibilityService : AccessibilityService() {
         }
     }
 
-    /** Opens [uri] inside [pkg] (e.g. YouTube's Subscriptions page). */
     private fun openInApp(pkg: String, uri: String): Boolean = runCatching {
         startActivity(
             android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(uri))
-                .setPackage(pkg)
-                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                .setPackage(pkg).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
         )
     }.isSuccess
 
-    /** The pause screen is independent of the session: it stays until you choose. */
-    private fun endSession() {
-        session = null
-    }
+    private fun endSession() { session = null }
 
-    /**
-     * Presses Back, then ignores the closing animation (which still shows the viewer for a
-     * moment). If the viewer is somehow still open after that, press Back once more.
-     * Without this, a second Back lands on the app's home screen and closes the app.
-     */
     private fun pressBackOnce(rule: ContentRule) {
         performGlobalAction(GLOBAL_ACTION_BACK)
         backSettlingUntil = System.currentTimeMillis() + BACK_SETTLE_MS
@@ -358,7 +464,6 @@ class GuardAccessibilityService : AccessibilityService() {
         BlockWidget.refresh(applicationContext)
     }
 
-    /** True if we have been firing over and over (probably a false match): pause instead of spamming. */
     private fun loopGuardTripped(now: Long): Boolean {
         recentActions.addLast(now)
         while (recentActions.isNotEmpty() && now - recentActions.first() > LOOP_WINDOW_MS) recentActions.removeFirst()
@@ -373,6 +478,7 @@ class GuardAccessibilityService : AccessibilityService() {
     override fun onDestroy() {
         if (::pause.isInitialized) pause.dismiss()
         if (::banner.isInitialized) banner.dismiss()
+        if (::usage.isInitialized) usage.flush()
         scope.cancel()
         super.onDestroy()
     }
@@ -387,5 +493,13 @@ class GuardAccessibilityService : AccessibilityService() {
         const val BACK_SETTLE_MS = 1_500L
         const val NEW_VISIT_MS = 30_000L
         const val WATCH_PASS_MS = 60_000L
+        const val APP_BLOCK_THROTTLE = 1_500L
+        val BROWSERS = setOf(
+            "com.android.chrome", "com.chrome.beta", "com.chrome.dev",
+            "org.mozilla.firefox", "com.microsoft.emmx", "com.opera.browser",
+            "com.opera.mini.native", "com.brave.browser", "com.duckduckgo.mobile.android",
+            "com.sec.android.app.sbrowser", "com.android.browser", "com.UCMobile.intl",
+            "com.vivaldi.browser", "com.kiwibrowser.browser",
+        )
     }
 }
