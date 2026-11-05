@@ -41,6 +41,15 @@ class GuardAccessibilityService : AccessibilityService() {
     private val watchPass = mutableMapOf<String, Long>()
     private var lastForegroundPkg: String? = null
     private var lastAppBlockAt = 0L
+    private val lastEmitAt = mutableMapOf<String, Long>()
+
+    /** Sends a partner event at most once a minute per type (no-op if unlinked). */
+    private fun emitPartnerEvent(type: String) {
+        val now = System.currentTimeMillis()
+        if (now - (lastEmitAt[type] ?: 0L) < 60_000L) return
+        lastEmitAt[type] = now
+        scope.launch { com.focuslock.app.backend.Backend.emitEvent(type) }
+    }
 
     private data class ViewerSession(val ruleId: String, var startedAt: Long, var index: Int? = null)
     private var session: ViewerSession? = null
@@ -84,6 +93,7 @@ class GuardAccessibilityService : AccessibilityService() {
                 lastActionAt = now
                 performGlobalAction(GLOBAL_ACTION_HOME)
                 banner.show("Access blocked", "Turn off protection in FocusLock first (needs your challenge).", null)
+                emitPartnerEvent("uninstall_attempt")
                 return
             }
         }
@@ -96,6 +106,7 @@ class GuardAccessibilityService : AccessibilityService() {
                     performGlobalAction(GLOBAL_ACTION_HOME)
                     banner.show("Settings protected", "This setting is guarded by FocusLock.", null)
                 }
+                emitPartnerEvent("disable_attempt")
                 return
             }
         }

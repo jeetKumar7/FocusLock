@@ -12,6 +12,8 @@
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
     <!-- Optional biometric/PIN lock on the app. -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <!-- Partner accountability push notifications (opt-in). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:allowBackup="false"
@@ -65,6 +67,14 @@
             <meta-data
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_config" />
+        </service>
+
+        <service
+            android:name=".backend.FocusMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
         </service>
 
         <service

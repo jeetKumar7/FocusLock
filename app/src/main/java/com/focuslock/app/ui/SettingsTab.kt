@@ -22,6 +22,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.focuslock.app.BuildConfig
 import com.focuslock.app.lock.ChallengeType
 import com.focuslock.app.lock.LockState
@@ -51,6 +52,7 @@ import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.DataUsage
 import androidx.compose.material.icons.rounded.Fingerprint
+import androidx.compose.material.icons.rounded.Group
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.MenuBook
 import androidx.compose.material.icons.rounded.SettingsApplications
@@ -67,6 +69,7 @@ fun SettingsTab(
     onOpenUsageLimits: () -> Unit,
     onOpenWebsites: () -> Unit,
     onOpenLearn: () -> Unit,
+    onOpenAccount: () -> Unit,
     onTestingMode: (Boolean) -> Unit,
     onUninstallProtection: (Boolean) -> Unit,
     onSettingsGuarded: (Boolean) -> Unit,
@@ -105,6 +108,21 @@ fun SettingsTab(
                 NavRow(
                     "Block messages", "${state.messages.size}",
                     leading = { IconBadge(Icons.Rounded.ChatBubble, ios.green) }, onClick = onOpenMessages,
+                )
+            },
+        )
+
+        val backend by com.focuslock.app.backend.Backend.state.collectAsStateWithLifecycle()
+        Section(
+            header = "Accountability",
+            footer = "Link a trusted partner who's alerted if you relapse or try to remove FocusLock. Opt-in — you choose what they see.",
+            rows = listOf {
+                NavRow(
+                    "Accountability partner",
+                    if (backend.link != null) "Linked" else "Off",
+                    subtitle = "A partner keeps you honest",
+                    leading = { IconBadge(Icons.Rounded.Group, ios.pink) },
+                    onClick = onOpenAccount,
                 )
             },
         )

@@ -72,6 +72,7 @@ import com.focuslock.app.ui.AdultFilterPage
 import com.focuslock.app.ui.AppBlockingPage
 import com.focuslock.app.ui.Apps
 import com.focuslock.app.ui.BlocksTab
+import com.focuslock.app.ui.AccountPage
 import com.focuslock.app.ui.ChallengePage
 import com.focuslock.app.ui.Goal
 import com.focuslock.app.ui.LearnPage
@@ -116,6 +117,7 @@ private sealed interface Route {
     data object Sleep : Route
     data object Websites : Route
     data object Learn : Route
+    data object Account : Route
 }
 
 private sealed interface Pending {
@@ -222,6 +224,7 @@ private fun App(lock: LockManager, startVpn: () -> Unit, stopVpn: () -> Unit, au
         }
     }
     LaunchedEffect(Unit) { lock.ensureStreakStarted() }
+    LaunchedEffect(Unit) { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { com.focuslock.app.backend.Backend.init() } }
 
     // Biometric / PIN gate. Re-locks whenever the app leaves the foreground.
     var unlocked by remember { mutableStateOf(false) }
@@ -327,6 +330,7 @@ private fun App(lock: LockManager, startVpn: () -> Unit, stopVpn: () -> Unit, au
                                         onOpenUsageLimits = { stack += Route.UsageLimits },
                                         onOpenWebsites = { stack += Route.Websites },
                                         onOpenLearn = { stack += Route.Learn },
+                                        onOpenAccount = { stack += Route.Account },
                                         onTestingMode = { on -> scope.launch { lock.setTestingMode(on) } },
                                         onUninstallProtection = { on ->
                                             if (on) {
@@ -446,7 +450,12 @@ private fun App(lock: LockManager, startVpn: () -> Unit, stopVpn: () -> Unit, au
                                     )
                                     Route.Streak -> StreaksPage(
                                         state, { back() },
-                                        onRelapse = { scope.launch { lock.relapse() } },
+                                        onRelapse = {
+                                            scope.launch {
+                                                lock.relapse()
+                                                com.focuslock.app.backend.Backend.emitEvent("relapse")
+                                            }
+                                        },
                                     )
                                     Route.Websites -> WebsiteBlockPage(
                                         state, { back() },
@@ -454,6 +463,7 @@ private fun App(lock: LockManager, startVpn: () -> Unit, stopVpn: () -> Unit, au
                                         onRemove = { domain -> scope.launch { lock.removeBlockedSite(domain) } },
                                     )
                                     Route.Learn -> LearnPage { back() }
+                                    Route.Account -> AccountPage { back() }
                                     Route.Sleep -> SleepPage(
                                         state, { back() },
                                         onSetEnabled = { on -> scope.launch { lock.setSleepEnabled(on) } },
