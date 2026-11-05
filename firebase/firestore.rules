@@ -1,0 +1,75 @@
+rules_version = '2';
+
+// FocusLock backend — Phase 4a (accountability core).
+// Principle: the server holds the MINIMUM. A partner can read only the
+// aggregate fields a user has explicitly agreed to share, and only through
+// an active link. No screen content, URLs, or message text ever lives here.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function isUser(uid) { return signedIn() && request.auth.uid == uid; }
+
+    // True if the caller has an active link with `otherUid`.
+    function linkedTo(otherUid) {
+      return signedIn() && exists(/databases/$(database)/documents/links/$(linkId(request.auth.uid, otherUid)));
+    }
+    // Deterministic link id so both directions resolve to one doc.
+    function linkId(a, b) {
+      return a < b ? a + '_' + b : b + '_' + a;
+    }
+
+    // ---- users ----
+    // Owner has full read. A linked partner may read ONLY if an active link
+    // exists; field-level sharing (which aggregates are visible) is enforced
+    // by the client writing only shared fields into `agg` and by functions.
+    match /users/{uid} {
+      allow read: if isUser(uid) || linkedTo(uid);
+      allow create, update: if isUser(uid);
+      allow delete: if isUser(uid);
+    }
+
+    // ---- link codes (ephemeral; redeemed via callable function) ----
+    match /linkCodes/{code} {
+      allow read: if false;            // only Cloud Functions read these
+      allow write: if false;           // created/consumed by functions only
+    }
+
+    // ---- links ----
+    // Created by the redeemLinkCode function. Either party can read/delete.
+    match /links/{linkId} {
+      allow read, delete: if signedIn() &&
+        (request.auth.uid == resource.data.a || request.auth.uid == resource.data.b);
+      allow create, update: if false;  // functions only
+    }
+
+    // ---- accountability events ----
+    // Author writes; recipients (and author) read. No edits/deletes after send.
+    match /events/{eventId} {
+      allow create: if signedIn() && request.resource.data.fromUid == request.auth.uid;
+      allow read: if signedIn() &&
+        (request.auth.uid == resource.data.fromUid || request.auth.uid in resource.data.toUids);
+      allow update, delete: if false;
+    }
+
+    // ---- daily reports (written by scheduled function; read by linked partner) ----
+    match /reports/{uid}/{day} {
+      allow read: if isUser(uid) || linkedTo(uid);
+      allow write: if false;           // functions only
+    }
+
+    // ---- community (Phase 4d; rules in place, feature built later) ----
+    match /community/posts/{postId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.authorUid == request.auth.uid
+                    && request.resource.data.text.size() <= 2000;
+      allow update, delete: if signedIn() && resource.data.authorUid == request.auth.uid;
+
+      match /comments/{commentId} {
+        allow read: if signedIn();
+        allow create: if signedIn() && request.resource.data.authorUid == request.auth.uid;
+        allow update, delete: if signedIn() && resource.data.authorUid == request.auth.uid;
+      }
+    }
+  }
+}
